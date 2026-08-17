@@ -1,113 +1,63 @@
 package com.example.gym_server.service;
 
+import com.example.gym_server.constant.ErrorCode;
 import com.example.gym_server.constant.RoleConstant;
 import com.example.gym_server.constant.StatusConstant;
 import com.example.gym_server.entity.User;
+import com.example.gym_server.exception.BusinessException;
 import com.example.gym_server.repository.UserRepository;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.util.Optional;
-
 @Service
 public class UserService {
-
     private final UserRepository userRepository;
-
     private final BCryptPasswordEncoder passwordEncoder;
 
-
-    public UserService(UserRepository userRepository,
-                       BCryptPasswordEncoder passwordEncoder) {
-
+    public UserService(UserRepository userRepository, BCryptPasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-
     }
 
-
-    // 注册用户
-    // 注册用户
     public User register(User user) {
-
-
-        // 检查用户名是否存在
-        Optional<User> existUser =
-                userRepository.findByUsername(user.getUsername());
-
-
-        if (existUser.isPresent()) {
-
-            throw new RuntimeException("用户名已存在");
-
+        if (userRepository.findByUsername(user.getUsername()).isPresent()) {
+            throw BusinessException.of(ErrorCode.USERNAME_EXISTS, "用户名已存在");
         }
-
-
-
-        // 密码加密
-        user.setPassword(
-                passwordEncoder.encode(user.getPassword())
-        );
-
-
-
-        // 默认普通用户
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
         user.setRole(RoleConstant.USER);
-
-
-
-        // 默认账号正常
         user.setStatus(StatusConstant.NORMAL);
-
-
-
-        // 创建时间
-        user.setCreateTime(
-                java.time.LocalDateTime.now()
-        );
-
-
-
+        user.setCreateTime(java.time.LocalDateTime.now());
         return userRepository.save(user);
-
     }
 
-
-
-    // 根据用户名查询用户
     public User findByUsername(String username) {
-
-        return userRepository.findByUsername(username)
-                .orElse(null);
-
+        return userRepository.findByUsername(username).orElse(null);
     }
 
+    public User findById(Long id) {
+        return userRepository.findById(id)
+                .orElseThrow(() -> BusinessException.of(ErrorCode.RESOURCE_NOT_FOUND, "用户不存在"));
+    }
 
-
-    // 用户登录
     public User login(String username, String password) {
-
         User user = userRepository.findByUsername(username)
-                .orElse(null);
-
-
-        if (user == null) {
-            throw new RuntimeException("用户不存在");
+                .orElseThrow(() -> BusinessException.of(ErrorCode.PASSWORD_WRONG, "用户名或密码错误"));
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            throw BusinessException.of(ErrorCode.PASSWORD_WRONG, "用户名或密码错误");
         }
-
-
-        // BCrypt密码匹配
-        if (!passwordEncoder.matches(
-                password,
-                user.getPassword()
-        )) {
-
-            throw new RuntimeException("密码错误");
-
+        if (StatusConstant.DISABLED.equals(user.getStatus())) {
+            throw BusinessException.of(ErrorCode.ACCESS_DENIED, "账户已被禁用");
         }
-
-
         return user;
     }
 
+    public void changePassword(String username, String oldPassword, String newPassword) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> BusinessException.of(ErrorCode.RESOURCE_NOT_FOUND, "用户不存在"));
+        if (!passwordEncoder.matches(oldPassword, user.getPassword())) {
+            throw BusinessException.of(ErrorCode.PASSWORD_WRONG, "旧密码错误");
+        }
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
 }

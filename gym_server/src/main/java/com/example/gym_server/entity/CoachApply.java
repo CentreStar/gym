@@ -29,6 +29,10 @@ public class CoachApply {
 
     //个人介绍
     private String description;
+    private String proofMaterial;
+
+    //拒绝原因
+    private String rejectReason;
 
 
     //审核状态
@@ -98,6 +102,10 @@ public class CoachApply {
     public void setDescription(String description) {
         this.description=description;
     }
+    public String getProofMaterial() { return proofMaterial; }
+    public void setProofMaterial(String proofMaterial) { this.proofMaterial = proofMaterial; }
+    public String getRejectReason() { return rejectReason; }
+    public void setRejectReason(String rejectReason) { this.rejectReason = rejectReason; }
 
 
 

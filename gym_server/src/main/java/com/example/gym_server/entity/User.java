@@ -1,6 +1,7 @@
 package com.example.gym_server.entity;
 
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.LocalDateTime;
 
 
@@ -80,6 +81,7 @@ public class User {
 
 
 
+    @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     public String getPassword() {
 
         return password;

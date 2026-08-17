@@ -1,85 +1,51 @@
 package com.example.gym_server.controller;
 
-
+import com.example.gym_server.dto.ApiResponse;
 import com.example.gym_server.entity.CoachApply;
 import com.example.gym_server.service.CoachApplyService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-
 @RestController
 @RequestMapping("/coach")
+@CrossOrigin
 public class CoachApplyController {
-
 
     private final CoachApplyService coachApplyService;
 
-
-
-    public CoachApplyController(
-            CoachApplyService coachApplyService
-    ){
-
+    public CoachApplyController(CoachApplyService coachApplyService) {
         this.coachApplyService = coachApplyService;
-
     }
-
-
 
     // 用户申请成为教练
     @PostMapping("/apply")
-    public CoachApply apply(
-            @RequestBody CoachApply coachApply
-    ){
-
-        return coachApplyService.apply(coachApply);
-
+    public ApiResponse<CoachApply> apply(@RequestBody CoachApply coachApply) {
+        return ApiResponse.ok(coachApplyService.apply(coachApply));
     }
 
-
-
-
+    @GetMapping("/apply/user/{userId}")
+    public ApiResponse<CoachApply> getUserApply(@PathVariable Long userId) {
+        return ApiResponse.ok(coachApplyService.getLatest(userId));
+    }
 
     // 管理员查看教练申请列表
     @GetMapping("/admin/apply/list")
-    public List<CoachApply> getApplyList(){
-
-        return coachApplyService.getAllApply();
-
+    public ApiResponse<List<CoachApply>> getApplyList() {
+        return ApiResponse.ok(coachApplyService.getAllApply());
     }
-
-
-
-
 
     // 管理员通过申请
     @PutMapping("/admin/apply/pass/{id}")
-    public String pass(
-            @PathVariable Long id
-    ){
-
+    public ApiResponse<Void> pass(@PathVariable Long id) {
         coachApplyService.pass(id);
-
-        return "审核通过";
-
+        return ApiResponse.ok();
     }
-
-
-
-
 
     // 管理员拒绝申请
     @PutMapping("/admin/apply/reject/{id}")
-    public String reject(
-            @PathVariable Long id
-    ){
-
-        coachApplyService.reject(id);
-
-        return "已拒绝";
-
+    public ApiResponse<Void> reject(@PathVariable Long id, @RequestParam(required = false) String reason) {
+        coachApplyService.reject(id, reason);
+        return ApiResponse.ok();
     }
-
-
 }
