@@ -1,40 +1,32 @@
-package com.example.gym_server.entity;
+package com.example.gym_server.dto;
 
-import jakarta.persistence.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.util.List;
 
 /**
- * 运动记录：用户手动添加，与扫码进出场（gym_visits）完全独立。
- * 月度运动统计只依据 exercise_date 字段。
+ * 添加/编辑运动记录的请求体。
+ * bodyParts 以数组形式提交（力量训练部位多选），服务层拼接为逗号分隔字符串。
  */
-@Entity
-@Table(name = "exercise_records", indexes = @Index(name = "idx_user_date", columnList = "userId, exerciseDate"))
-public class ExerciseRecord {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY) private Long id;
-    private Long userId;
-    /** STRENGTH / ELLIPTICAL / STEPPER / TREADMILL */
+public class ExerciseRequest {
+    @NotBlank
     private String exerciseType;
-    /** 力量训练部位，多选，逗号拼接，如 "肩,胸,手臂" */
-    private String bodyParts;
+    private List<String> bodyParts;
     private String actionName;
     private Double weight;
     private Integer sets;
-    /** 椭圆机把手类型：固定把手 / 摇摆把手 */
     private String handleType;
-    /** 椭圆机阻力等级 */
     private Integer resistance;
     private Double speed;
     private Double incline;
+    @NotNull
     private Integer durationMinutes;
-    /** 用户实际运动日期（非记录创建时间、非扫码时间） */
     private LocalDate exerciseDate;
-    private LocalDateTime createTime = LocalDateTime.now();
 
-    public Long getId() { return id; }
-    public Long getUserId() { return userId; } public void setUserId(Long userId) { this.userId = userId; }
     public String getExerciseType() { return exerciseType; } public void setExerciseType(String exerciseType) { this.exerciseType = exerciseType; }
-    public String getBodyParts() { return bodyParts; } public void setBodyParts(String bodyParts) { this.bodyParts = bodyParts; }
+    public List<String> getBodyParts() { return bodyParts; } public void setBodyParts(List<String> bodyParts) { this.bodyParts = bodyParts; }
     public String getActionName() { return actionName; } public void setActionName(String actionName) { this.actionName = actionName; }
     public Double getWeight() { return weight; } public void setWeight(Double weight) { this.weight = weight; }
     public Integer getSets() { return sets; } public void setSets(Integer sets) { this.sets = sets; }
@@ -44,5 +36,4 @@ public class ExerciseRecord {
     public Double getIncline() { return incline; } public void setIncline(Double incline) { this.incline = incline; }
     public Integer getDurationMinutes() { return durationMinutes; } public void setDurationMinutes(Integer durationMinutes) { this.durationMinutes = durationMinutes; }
     public LocalDate getExerciseDate() { return exerciseDate; } public void setExerciseDate(LocalDate exerciseDate) { this.exerciseDate = exerciseDate; }
-    public LocalDateTime getCreateTime() { return createTime; } public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
 }

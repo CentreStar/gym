@@ -1,7 +1,6 @@
 package com.example.gym_server.service;
 
 import com.example.gym_server.constant.ErrorCode;
-import com.example.gym_server.dto.MonthlyAttendanceResponse;
 import com.example.gym_server.dto.VisitResponse;
 import com.example.gym_server.entity.GymVisit;
 import com.example.gym_server.entity.User;
@@ -17,7 +16,6 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.HexFormat;
-import java.util.List;
 
 @Service
 public class GymVisitService {
@@ -50,24 +48,9 @@ public class GymVisitService {
                 });
     }
 
-    public MonthlyAttendanceResponse monthly(Long userId, int year, int month) {
-        YearMonth selected = YearMonth.of(year, month);
-        LocalDateTime start = selected.atDay(1).atStartOfDay();
-        LocalDateTime end = selected.plusMonths(1).atDay(1).atStartOfDay();
-        List<GymVisit> list = visits.findByUserIdAndEnteredAtGreaterThanEqualAndEnteredAtLessThan(userId, start, end);
-        List<Integer> days = list.stream().map(visit -> visit.getEnteredAt().getDayOfMonth()).distinct().sorted().toList();
-        long duration = list.stream().mapToLong(visit -> visit.getDurationSeconds() == null ? 0 : visit.getDurationSeconds()).sum();
-        return new MonthlyAttendanceResponse(year, month, days.size(), duration, days);
-    }
-
     public long todayCount() {
         LocalDateTime start = LocalDate.now().atStartOfDay();
         return visits.countByEnteredAtBetween(start, start.plusDays(1));
-    }
-
-    /** 供其它业务（如课程签到）复用：解析二维码并校验签名/有效期，返回 userId。 */
-    public Long resolveUserId(String qrCode) {
-        return parseQrCode(qrCode);
     }
 
     private VisitResponse open(Long userId, LocalDateTime now) {

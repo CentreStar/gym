@@ -6,27 +6,26 @@ import com.example.gym_server.repository.CoachAvailabilityRepository;
 import com.example.gym_server.repository.PrivateBookingRepository;
 import com.example.gym_server.repository.UserRepository;
 import com.example.gym_server.service.GymBusinessService;
-import com.example.gym_server.service.GymVisitService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @CrossOrigin
-@RequestMapping("/api")
+@RequestMapping("/api/v1")
 public class GymBusinessController {
     private final GymBusinessService service;
-    private final GymVisitService visitService;
     private final CoachAvailabilityRepository availabilities;
     private final PrivateBookingRepository privateBookings;
     private final UserRepository users;
 
-    public GymBusinessController(GymBusinessService service, GymVisitService visitService,
+    public GymBusinessController(GymBusinessService service,
                                  CoachAvailabilityRepository availabilities, PrivateBookingRepository privateBookings,
                                  UserRepository users) {
-        this.service = service; this.visitService = visitService;
+        this.service = service;
         this.availabilities = availabilities; this.privateBookings = privateBookings; this.users = users;
     }
 
@@ -134,12 +133,36 @@ public class GymBusinessController {
 
     // ==================== 运动记录 ====================
     @GetMapping("/exercise/{username}")
-    public ApiResponse<List<ExerciseRecord>> exercises(@PathVariable String username) {
-        return ApiResponse.ok(service.exercises(username));
+    public ApiResponse<List<ExerciseRecord>> exercises(@PathVariable String username,
+                                                       @RequestParam(required = false) Integer year,
+                                                       @RequestParam(required = false) Integer month) {
+        return ApiResponse.ok(service.exercises(username, year, month));
     }
+
+    @GetMapping("/exercise/{username}/monthly")
+    public ApiResponse<MonthlyExerciseResponse> exerciseMonthly(@PathVariable String username,
+                                                                @RequestParam(required = false) Integer year,
+                                                                @RequestParam(required = false) Integer month) {
+        YearMonth current = YearMonth.now();
+        return ApiResponse.ok(service.exerciseMonthly(username,
+                year == null ? current.getYear() : year,
+                month == null ? current.getMonthValue() : month));
+    }
+
     @PostMapping("/exercise/{username}")
-    public ApiResponse<ExerciseRecord> addExercise(@PathVariable String username, @RequestBody ExerciseRecord record) {
-        return ApiResponse.ok(service.addExercise(username, record));
+    public ApiResponse<ExerciseRecord> addExercise(@PathVariable String username, @Valid @RequestBody ExerciseRequest request) {
+        return ApiResponse.ok(service.addExercise(username, request));
+    }
+
+    @PutMapping("/exercise/{id}")
+    public ApiResponse<ExerciseRecord> updateExercise(@PathVariable Long id, @RequestBody ExerciseRequest request) {
+        return ApiResponse.ok(service.updateExercise(id, request));
+    }
+
+    @DeleteMapping("/exercise/{id}")
+    public ApiResponse<Void> deleteExercise(@PathVariable Long id) {
+        service.deleteExercise(id);
+        return ApiResponse.ok();
     }
 
     // ==================== 课程 / 预约 / 签到 ====================
@@ -162,11 +185,6 @@ public class GymBusinessController {
     @PostMapping("/courses/{courseId}/book/{username}")
     public ApiResponse<BookingResponse> book(@PathVariable Long courseId, @PathVariable String username) {
         return ApiResponse.ok(service.book(username, courseId));
-    }
-    @PostMapping("/courses/{courseId}/checkin")
-    public ApiResponse<CourseBooking> checkin(@PathVariable Long courseId, @Valid @RequestBody CheckinRequest request) {
-        Long userId = visitService.resolveUserId(request.getQrCode());
-        return ApiResponse.ok(service.checkin(userId, courseId));
     }
     @GetMapping("/bookings/{username}")
     public ApiResponse<List<BookingResponse>> bookings(@PathVariable String username) {

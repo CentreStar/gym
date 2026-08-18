@@ -10,11 +10,9 @@ public class CourseBooking {
     private Long userId;
     private Long courseId;
     private String status = "BOOKED";
-    private boolean checkedIn = false;
     private LocalDateTime createTime = LocalDateTime.now();
     public Long getId() { return id; } public Long getUserId() { return userId; } public void setUserId(Long userId) { this.userId = userId; }
     public Long getCourseId() { return courseId; } public void setCourseId(Long courseId) { this.courseId = courseId; }
     public String getStatus() { return status; } public void setStatus(String status) { this.status = status; }
-    public boolean isCheckedIn() { return checkedIn; } public void setCheckedIn(boolean checkedIn) { this.checkedIn = checkedIn; }
     public LocalDateTime getCreateTime() { return createTime; }
 }

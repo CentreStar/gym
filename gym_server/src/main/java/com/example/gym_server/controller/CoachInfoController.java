@@ -6,7 +6,7 @@ import com.example.gym_server.service.CoachInfoService;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/coach/info")
+@RequestMapping("/api/v1/coach/info")
 @CrossOrigin
 public class CoachInfoController {
 

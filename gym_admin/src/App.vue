@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-const API = 'http://localhost:8080'
+const API = 'http://localhost:8080/api/v1'
 const menu = ['数据看板', '会员卡管理', '通知发布', '用户权限', '教练入驻', '退款审核', '课程安排', '系统配置']
 const active = ref(0)
 const message = ref('')
@@ -9,6 +9,7 @@ const message = ref('')
 // 数据
 const username = ref('')
 const report = ref<any>(null)
+const reportMonth = ref(new Date().toISOString().slice(0, 7))
 const stats = ref<any>(null)
 const trend = ref<any[]>([])
 const topCourses = ref<any[]>([])
@@ -40,8 +41,8 @@ const courseCapacity = ref('20')
 const coursePrice = ref('')
 
 const duration = computed(() => {
-  const sec = report.value?.totalDurationSeconds ?? 0
-  return `${Math.floor(sec / 3600)}小时${Math.floor((sec % 3600) / 60)}分`
+  const min = report.value?.totalMinutes ?? 0
+  return `${Math.floor(min / 60)}小时${min % 60}分`
 })
 const maxTrend = computed(() => Math.max(1, ...trend.value.map((p) => p.count ?? 0)))
 
@@ -56,12 +57,12 @@ async function request(path: string, options?: RequestInit) {
 async function loadData() {
   try {
     ;[cards.value, users.value, applications.value, courses.value, refunds.value, configs.value] = await Promise.all([
-      request('/api/cards?all=true'),
-      request('/api/users'),
+      request('/cards?all=true'),
+      request('/users'),
       request('/coach/admin/apply/list'),
-      request('/api/courses'),
-      request('/api/refunds/pending'),
-      request('/api/config'),
+      request('/courses'),
+      request('/refunds/pending'),
+      request('/config'),
     ])
   } catch (e) {
     message.value = '数据加载失败：' + e
@@ -70,9 +71,9 @@ async function loadData() {
 async function loadDashboard() {
   try {
     ;[stats.value, trend.value, topCourses.value] = await Promise.all([
-      request('/api/admin/dashboard/stats'),
-      request('/api/admin/dashboard/trend'),
-      request('/api/admin/dashboard/top-courses'),
+      request('/admin/dashboard/stats'),
+      request('/admin/dashboard/trend'),
+      request('/admin/dashboard/top-courses'),
     ])
   } catch (e) {
     message.value = '看板数据加载失败：' + e
@@ -81,7 +82,10 @@ async function loadDashboard() {
 async function queryReport() {
   if (!username.value.trim()) return
   try {
-    report.value = await request(`/attendance/monthly/${encodeURIComponent(username.value.trim())}`)
+    const [year, month] = (reportMonth.value || '').split('-').map(Number)
+    const y = year || new Date().getFullYear()
+    const m = month || new Date().getMonth() + 1
+    report.value = await request(`/exercise/${encodeURIComponent(username.value.trim())}/monthly?year=${y}&month=${m}`)
     message.value = '统计已更新'
   } catch (e) {
     message.value = '查询失败：' + e
@@ -90,7 +94,7 @@ async function queryReport() {
 
 async function publishNotice() {
   if (!noticeTitle.value || !noticeContent.value) return
-  await request('/api/notifications', {
+  await request('/notifications', {
     method: 'POST',
     body: JSON.stringify({
       title: noticeTitle.value,
@@ -117,25 +121,25 @@ async function review(id: number, pass: boolean) {
 }
 
 async function approveRefund(id: number) {
-  await request(`/api/refunds/${id}/approve`, { method: 'PUT' })
+  await request(`/refunds/${id}/approve`, { method: 'PUT' })
   message.value = '退款已通过，订单已退款'
   await loadData()
 }
 async function rejectRefund(id: number) {
   const reason = window.prompt('请输入拒绝原因') ?? ''
-  await request(`/api/refunds/${id}/reject?reason=${encodeURIComponent(reason)}`, { method: 'PUT' })
+  await request(`/refunds/${id}/reject?reason=${encodeURIComponent(reason)}`, { method: 'PUT' })
   message.value = '退款已拒绝'
   await loadData()
 }
 
 async function toggleUser(user: any) {
-  await request(`/api/users/${user.id}/status?value=${user.status === 'NORMAL' ? 'DISABLED' : 'NORMAL'}`, { method: 'PUT' })
+  await request(`/users/${user.id}/status?value=${user.status === 'NORMAL' ? 'DISABLED' : 'NORMAL'}`, { method: 'PUT' })
   await loadData()
 }
 
 async function saveCard() {
   if (!cardName.value || !cardPrice.value) return
-  await request('/api/cards', {
+  await request('/cards', {
     method: 'POST',
     body: JSON.stringify({
       name: cardName.value,
@@ -152,7 +156,7 @@ async function saveCard() {
   await loadData()
 }
 async function toggleCard(card: any) {
-  await request(`/api/cards/${card.id}`, {
+  await request(`/cards/${card.id}`, {
     method: 'PUT',
     body: JSON.stringify({ name: card.name, validDays: card.validDays, price: card.price, description: card.description, enabled: !card.enabled }),
   })
@@ -161,13 +165,14 @@ async function toggleCard(card: any) {
 
 async function saveCourse() {
   if (!courseTitle.value || !courseTime.value) return
-  await request('/api/courses', {
+  const startTime = courseTime.value.length === 16 ? courseTime.value + ':00' : courseTime.value
+  await request('/courses', {
     method: 'POST',
     body: JSON.stringify({
       title: courseTitle.value,
       type: courseType.value,
       coachName: courseCoach.value,
-      startTime: courseTime.value,
+      startTime,
       capacity: Number(courseCapacity.value),
       price: coursePrice.value,
     }),
@@ -180,7 +185,7 @@ async function saveCourse() {
 }
 
 async function saveConfig(key: string, value: string) {
-  await request(`/api/config/${key}?value=${encodeURIComponent(value)}`, { method: 'PUT' })
+  await request(`/config/${key}?value=${encodeURIComponent(value)}`, { method: 'PUT' })
   message.value = '配置已更新'
   await loadData()
 }
@@ -234,15 +239,16 @@ onMounted(() => {
         </section>
         <section class="panel">
           <h2>会员月度运动统计</h2>
-          <p>同一自然日去重；入场扫码开始计时，出场扫码停止计时。</p>
+          <p>依据运动记录日期统计；同一自然日去重，时长为当月累计。</p>
           <div class="search">
             <input v-model="username" placeholder="输入会员用户名" @keyup.enter="queryReport" />
+            <input v-model="reportMonth" type="month" />
             <button @click="queryReport">查询</button>
           </div>
           <div v-if="report" class="days">
             <b>运动日期</b>
-            <span v-for="day in report.activeDayNumbers" :key="day">{{ day }} 日</span>
-            <small>共 {{ report.activeDays }} 天，累计 {{ duration }}</small>
+            <span v-for="day in report.exerciseDates" :key="day">{{ day.slice(8) }} 日</span>
+            <small>共 {{ report.exerciseDays }} 天，累计 {{ duration }}</small>
           </div>
         </section>
       </template>
@@ -328,7 +334,7 @@ onMounted(() => {
             <option value="PT">私教</option>
           </select>
           <input v-model="courseCoach" placeholder="教练姓名" />
-          <input v-model="courseTime" placeholder="开始时间 2026-08-20T19:00" />
+          <input v-model="courseTime" type="datetime-local" />
           <input v-model="courseCapacity" type="number" placeholder="容量" />
           <input v-model="coursePrice" placeholder="价格" />
           <button @click="saveCourse">新增</button>

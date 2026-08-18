@@ -1,46 +1,28 @@
 package com.example.gym_server.controller;
 
-import com.example.gym_server.constant.ErrorCode;
 import com.example.gym_server.dto.ApiResponse;
-import com.example.gym_server.dto.MonthlyAttendanceResponse;
 import com.example.gym_server.dto.ScanRequest;
 import com.example.gym_server.dto.VisitResponse;
-import com.example.gym_server.entity.User;
-import com.example.gym_server.exception.BusinessException;
 import com.example.gym_server.service.GymVisitService;
-import com.example.gym_server.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.YearMonth;
 import java.util.Map;
 
+/** 签到/进出场模块：只负责二维码扫码开门以及进出场记录。 */
 @RestController
 @CrossOrigin
-@RequestMapping("/attendance")
+@RequestMapping("/api/v1/attendance")
 public class GymVisitController {
     private final GymVisitService service;
-    private final UserService users;
 
-    public GymVisitController(GymVisitService service, UserService users) {
-        this.service = service; this.users = users;
+    public GymVisitController(GymVisitService service) {
+        this.service = service;
     }
 
     @PostMapping("/scan")
     public ApiResponse<VisitResponse> scan(@Valid @RequestBody ScanRequest request) {
         return ApiResponse.ok(service.scan(request.getQrCode()));
-    }
-
-    @GetMapping("/monthly/{username}")
-    public ApiResponse<MonthlyAttendanceResponse> monthly(@PathVariable String username,
-                                                          @RequestParam(required = false) Integer year,
-                                                          @RequestParam(required = false) Integer month) {
-        User user = users.findByUsername(username);
-        if (user == null) throw BusinessException.of(ErrorCode.RESOURCE_NOT_FOUND, "用户不存在");
-        YearMonth current = YearMonth.now();
-        return ApiResponse.ok(service.monthly(user.getId(),
-                year == null ? current.getYear() : year,
-                month == null ? current.getMonthValue() : month));
     }
 
     @GetMapping("/today")

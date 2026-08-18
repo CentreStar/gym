@@ -189,17 +189,76 @@ public class GymBusinessService {
     }
 
     // ==================== 运动记录 ====================
-    public ExerciseRecord addExercise(String username, ExerciseRecord record) {
+    public ExerciseRecord addExercise(String username, ExerciseRequest request) {
+        ExerciseRecord record = fromRequest(request);
         record.setUserId(findUser(username).getId());
-        if (record.getCalories() == null) {
-            double met = "跑步机".equals(record.getExerciseType()) ? 8.0 : "爬楼机".equals(record.getExerciseType()) ? 9.0 : "椭圆仪".equals(record.getExerciseType()) ? 6.5 : 5.0;
-            record.setCalories(met * 70.0 * (record.getDurationMinutes() == null ? 0 : record.getDurationMinutes()) / 60.0);
-        }
+        if (record.getExerciseDate() == null) record.setExerciseDate(LocalDate.now());
         return exerciseRecords.save(record);
     }
-    public List<ExerciseRecord> exercises(String username) { return exerciseRecords.findByUserIdOrderByCreateTimeDesc(findUser(username).getId()); }
 
-    // ==================== 课程预约 / 签到 ====================
+    public List<ExerciseRecord> exercises(String username, Integer year, Integer month) {
+        Long userId = findUser(username).getId();
+        if (year != null && month != null) {
+            YearMonth ym = YearMonth.of(year, month);
+            return exerciseRecords.findByUserIdAndExerciseDateBetweenOrderByExerciseDateDesc(
+                    userId, ym.atDay(1), ym.plusMonths(1).atDay(1));
+        }
+        return exerciseRecords.findByUserIdOrderByExerciseDateDesc(userId);
+    }
+
+    /** 月度运动统计：只依据 exercise_records.exercise_date。 */
+    public MonthlyExerciseResponse exerciseMonthly(String username, int year, int month) {
+        Long userId = findUser(username).getId();
+        YearMonth ym = YearMonth.of(year, month);
+        LocalDate start = ym.atDay(1);
+        LocalDate end = ym.plusMonths(1).atDay(1);
+        long days = exerciseRecords.countDistinctExerciseDays(userId, start, end);
+        long minutes = exerciseRecords.sumDurationMinutes(userId, start, end);
+        List<String> dates = exerciseRecords.distinctExerciseDates(userId, start, end).stream()
+                .map(LocalDate::toString).toList();
+        return new MonthlyExerciseResponse(year, month, days, minutes, dates);
+    }
+
+    public ExerciseRecord updateExercise(Long id, ExerciseRequest request) {
+        ExerciseRecord record = exerciseRecords.findById(id)
+                .orElseThrow(() -> BusinessException.of(ErrorCode.RESOURCE_NOT_FOUND, "运动记录不存在"));
+        ExerciseRecord updated = fromRequest(request);
+        record.setExerciseType(updated.getExerciseType());
+        record.setBodyParts(updated.getBodyParts());
+        record.setActionName(updated.getActionName());
+        record.setWeight(updated.getWeight());
+        record.setSets(updated.getSets());
+        record.setHandleType(updated.getHandleType());
+        record.setResistance(updated.getResistance());
+        record.setSpeed(updated.getSpeed());
+        record.setIncline(updated.getIncline());
+        record.setDurationMinutes(updated.getDurationMinutes());
+        record.setExerciseDate(updated.getExerciseDate() == null ? LocalDate.now() : updated.getExerciseDate());
+        return exerciseRecords.save(record);
+    }
+
+    public void deleteExercise(Long id) {
+        exerciseRecords.deleteById(id);
+    }
+
+    private ExerciseRecord fromRequest(ExerciseRequest request) {
+        ExerciseRecord record = new ExerciseRecord();
+        record.setExerciseType(request.getExerciseType());
+        record.setBodyParts(request.getBodyParts() == null || request.getBodyParts().isEmpty()
+                ? null : String.join(",", request.getBodyParts()));
+        record.setActionName(request.getActionName());
+        record.setWeight(request.getWeight());
+        record.setSets(request.getSets());
+        record.setHandleType(request.getHandleType());
+        record.setResistance(request.getResistance());
+        record.setSpeed(request.getSpeed());
+        record.setIncline(request.getIncline());
+        record.setDurationMinutes(request.getDurationMinutes());
+        record.setExerciseDate(request.getExerciseDate());
+        return record;
+    }
+
+    // ==================== 课程预约 ====================
     @Transactional
     public BookingResponse book(String username, Long courseId) {
         User user = findUser(username);
@@ -225,18 +284,6 @@ public class GymBusinessService {
         CourseBooking booking = bookings.findById(bookingId).orElseThrow(() -> BusinessException.of(ErrorCode.RESOURCE_NOT_FOUND, "预约不存在"));
         booking.setStatus("CANCELLED");
         bookings.save(booking);
-    }
-
-    /** 课程签到：教练扫描会员二维码，标记到课。 */
-    @Transactional
-    public CourseBooking checkin(Long userId, Long courseId) {
-        CourseBooking booking = bookings.findByUserIdAndCourseId(userId, courseId)
-                .orElseThrow(() -> BusinessException.of(ErrorCode.RESOURCE_NOT_FOUND, "该会员未预约此课程"));
-        if (!"BOOKED".equals(booking.getStatus())) {
-            throw BusinessException.of(ErrorCode.BUSINESS_CONFLICT, "该预约已取消，无法签到");
-        }
-        booking.setCheckedIn(true);
-        return bookings.save(booking);
     }
 
     // ==================== 系统配置 ====================

@@ -15,7 +15,7 @@ const pale = Color(0xfff1efff);
 void main() => runApp(const StarGymApp());
 
 class Api {
-  static const base = 'http://10.0.2.2:8080';
+  static const base = 'http://10.0.2.2:8080/api/v1';
   static Future<dynamic> get(String path) async =>
       decode(await http.get(Uri.parse('$base$path')));
   static Future<dynamic> post(String path, Object body) async => decode(
@@ -27,6 +27,8 @@ class Api {
   );
   static Future<dynamic> put(String path) async =>
       decode(await http.put(Uri.parse('$base$path')));
+  static Future<dynamic> delete(String path) async =>
+      decode(await http.delete(Uri.parse('$base$path')));
   static dynamic decode(http.Response response) {
     dynamic body;
     if (response.bodyBytes.isNotEmpty) {
@@ -156,14 +158,12 @@ class _AuthPageState extends State<AuthPage> {
     setState(() => loading = true);
     try {
       final data = Map<String, dynamic>.from(
-        await Api.post(
-          isRegister ? '/user/register' : '/user/login',
-          {
-            'username': username.text.trim(),
-            'password': password.text,
-            if (isRegister) 'phone': phone.text.trim(),
-          },
-        ) as Map,
+        await Api.post(isRegister ? '/user/register' : '/user/login', {
+              'username': username.text.trim(),
+              'password': password.text,
+              if (isRegister) 'phone': phone.text.trim(),
+            })
+            as Map,
       );
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
@@ -572,6 +572,9 @@ class MonthlyPage extends StatefulWidget {
 
 class _MonthlyPageState extends State<MonthlyPage> {
   late Future<Map<String, dynamic>> report;
+  int year = DateTime.now().year;
+  int month = DateTime.now().month;
+
   @override
   void initState() {
     super.initState();
@@ -579,11 +582,30 @@ class _MonthlyPageState extends State<MonthlyPage> {
   }
 
   Future<Map<String, dynamic>> load() async => Map<String, dynamic>.from(
-    await Api.get('/attendance/monthly/${widget.session.username}') as Map,
+    await Api.get(
+          '/exercise/${widget.session.username}/monthly?year=$year&month=$month',
+        )
+        as Map,
   );
+
+  Future<void> pickMonth() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(year, month),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (picked == null) return;
+    setState(() {
+      year = picked.year;
+      month = picked.month;
+      report = load();
+    });
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('\u6708\u5ea6\u5230\u5e97\u7edf\u8ba1')),
+    appBar: AppBar(title: const Text('\u6708\u5ea6\u8fd0\u52a8\u7edf\u8ba1')),
     body: FutureBuilder<Map<String, dynamic>>(
       future: report,
       builder: (_, snapshot) {
@@ -591,19 +613,34 @@ class _MonthlyPageState extends State<MonthlyPage> {
         if (!snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
         final d = snapshot.data!;
-        final dates = d['activeDayNumbers'] is List
-            ? (d['activeDayNumbers'] as List).toSet()
-            : <dynamic>{};
-        final seconds = (d['totalDurationSeconds'] as num? ?? 0).toInt();
+        final days = (d['exerciseDates'] as List? ?? const [])
+            .map((e) => int.tryParse('$e'.split('-').last))
+            .whereType<int>()
+            .toSet();
+        final minutes = (d['totalMinutes'] as num? ?? 0).toInt();
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Text(
-              '${d['year']}\u5e74${d['month']}\u6708',
-              style: const TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$year\u5e74$month\u6708',
+                    style: const TextStyle(
+                      fontSize: 25,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: pickMonth,
+                  icon: const Icon(Icons.calendar_month),
+                  label: const Text('\u9009\u62e9\u6708\u4efd'),
+                ),
+              ],
             ),
             const Text(
-              '\u6839\u636e\u8fdb\u51fa\u573a\u4e8c\u7ef4\u7801\u8bb0\u5f55\u7edf\u8ba1',
+              '\u6839\u636e\u8fd0\u52a8\u8bb0\u5f55 exercise_date \u7edf\u8ba1\uff0c\u540c\u4e00\u81ea\u7136\u65e5\u53bb\u91cd',
               style: TextStyle(color: Colors.black54),
             ),
             const SizedBox(height: 18),
@@ -611,15 +648,15 @@ class _MonthlyPageState extends State<MonthlyPage> {
               children: [
                 Expanded(
                   child: StatBox(
-                    '\u5230\u5e97\u5929\u6570',
-                    '${d['activeDays'] ?? 0} \u5929',
+                    '\u8fd0\u52a8\u5929\u6570',
+                    '${d['exerciseDays'] ?? 0} \u5929',
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: StatBox(
                     '\u7d2f\u8ba1\u65f6\u957f',
-                    '${seconds ~/ 3600}\u5c0f\u65f6${seconds % 3600 ~/ 60}\u5206',
+                    '${minutes ~/ 60}\u5c0f\u65f6${minutes % 60}\u5206',
                   ),
                 ),
               ],
@@ -630,7 +667,7 @@ class _MonthlyPageState extends State<MonthlyPage> {
               runSpacing: 8,
               children: List.generate(31, (index) {
                 final day = index + 1;
-                final hit = dates.contains(day);
+                final hit = days.contains(day);
                 return Container(
                   width: 42,
                   height: 42,
@@ -693,17 +730,53 @@ class ExercisePage extends StatefulWidget {
 
 class _ExercisePageState extends State<ExercisePage> {
   late Future<List<dynamic>> records;
+  int? year;
+  int? month;
+
   @override
   void initState() {
     super.initState();
-    records = getList('/api/exercise/${widget.session.username}');
+    records = load();
+  }
+
+  Future<List<dynamic>> load() {
+    final query = (year != null && month != null)
+        ? '?year=$year&month=$month'
+        : '';
+    return getList('/exercise/${widget.session.username}$query');
   }
 
   void reload() {
-    final next = getList('/api/exercise/${widget.session.username}');
     if (!mounted) return;
+    final newRecords = load();
     setState(() {
-      records = next;
+      records = newRecords;
+    });
+  }
+
+  Future<void> pickMonth() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(year ?? now.year, month ?? now.month),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (picked == null) return;
+    final newRecords = load();
+    setState(() {
+      year = picked.year;
+      month = picked.month;
+      records = newRecords;
+    });
+  }
+
+  void clearFilter() {
+    final newRecords = load();
+    setState(() {
+      year = null;
+      month = null;
+      records = newRecords;
     });
   }
 
@@ -731,46 +804,44 @@ class _ExercisePageState extends State<ExercisePage> {
         if (!snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
         final data = snapshot.data!;
-        final minutes = data.fold<int>(
+        final totalMinutes = data.fold<int>(
           0,
           (a, x) => a + ((x['durationMinutes'] as num?)?.toInt() ?? 0),
-        );
-        final sets = data.fold<int>(
-          0,
-          (a, x) => a + ((x['sets'] as num?)?.toInt() ?? 0),
-        );
-        final calories = data.fold<double>(
-          0,
-          (a, x) => a + ((x['calories'] as num?)?.toDouble() ?? 0),
         );
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            const Text(
-              '\u8bad\u7ec3\u6c47\u603b',
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
-                  child: StatBox(
-                    '\u8bad\u7ec3\u65f6\u957f',
-                    '$minutes \u5206\u949f',
+                  child: Text(
+                    year == null
+                        ? '\u5168\u90e8\u8bb0\u5f55'
+                        : '$year\u5e74$month\u6708',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: StatBox('\u8bad\u7ec3\u7ec4\u6570', '$sets \u7ec4'),
+                OutlinedButton.icon(
+                  onPressed: pickMonth,
+                  icon: const Icon(Icons.calendar_month),
+                  label: const Text('\u6309\u6708\u4efd'),
                 ),
+                if (year != null)
+                  TextButton(
+                    onPressed: clearFilter,
+                    child: const Text('\u6e05\u9664'),
+                  ),
               ],
             ),
             const SizedBox(height: 8),
             StatBox(
-              '\u8fd0\u52a8\u6d88\u8017',
-              '${calories.toStringAsFixed(0)} \u5343\u5361',
+              '\u7d2f\u8ba1\u8bad\u7ec3\u65f6\u957f',
+              '$totalMinutes \u5206\u949f',
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 12),
             if (data.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(30),
@@ -779,32 +850,83 @@ class _ExercisePageState extends State<ExercisePage> {
                 ),
               )
             else
-              ...data.map(
-                (x) => Card(
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: pale,
-                      child: Text(
-                        '${x['bodyPart'] ?? ''}',
-                        style: const TextStyle(color: purple),
-                      ),
-                    ),
-                    title: Text('${x['actionName'] ?? ''}'),
-                    subtitle: Text(
-                      '${x['weight'] ?? 0} \u5343\u514b  ${x['sets'] ?? 0} \u7ec4  ${x['durationMinutes'] ?? 0} \u5206\u949f',
-                    ),
-                    trailing: Text(
-                      '${x['createTime'] ?? ''}'.split('T').first,
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                  ),
-                ),
-              ),
+              ...data.map((x) => _recordTile(x)),
           ],
         );
       },
     ),
   );
+
+  Widget _recordTile(dynamic x) {
+    final type = _typeLabel('${x['exerciseType'] ?? ''}');
+    final date = '${x['exerciseDate'] ?? ''}';
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: pale,
+          child: Text(
+            type,
+            style: const TextStyle(color: purple, fontSize: 12),
+          ),
+        ),
+        title: Text(_summary(x)),
+        subtitle: Text(
+          '$date \u00b7 ${x['durationMinutes'] ?? 0} \u5206\u949f',
+        ),
+        trailing: IconButton(
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () => _delete(x),
+        ),
+      ),
+    );
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'STRENGTH':
+        return '\u529b\u91cf';
+      case 'ELLIPTICAL':
+        return '\u692d\u5706';
+      case 'STEPPER':
+        return '\u722c\u697c';
+      case 'TREADMILL':
+        return '\u8dd1\u6b65';
+      default:
+        return '\u8fd0\u52a8';
+    }
+  }
+
+  String _summary(dynamic x) {
+    final type = '${x['exerciseType'] ?? ''}';
+    switch (type) {
+      case 'STRENGTH':
+        final action = '${x['actionName'] ?? ''}';
+        final parts = '${x['bodyParts'] ?? ''}';
+        if (action.isEmpty)
+          return parts.isEmpty ? '\u529b\u91cf\u8bad\u7ec3' : parts;
+        return parts.isEmpty ? action : '$action \u00b7 $parts';
+      case 'ELLIPTICAL':
+        final h = '${x['handleType'] ?? ''}';
+        return h.isEmpty
+            ? '\u692d\u5706\u673a'
+            : '\u692d\u5706\u673a \u00b7 $h';
+      case 'STEPPER':
+        return '\u722c\u697c\u673a \u00b7 ${x['speed'] ?? '-'}';
+      case 'TREADMILL':
+        return '\u8dd1\u6b65\u673a \u00b7 ${x['speed'] ?? '-'} km/h';
+      default:
+        return '\u8fd0\u52a8\u8bb0\u5f55';
+    }
+  }
+
+  Future<void> _delete(dynamic x) async {
+    try {
+      await Api.delete('/exercise/${x['id']}');
+      if (mounted) reload();
+    } catch (e) {
+      if (mounted) showToast(context, '$e');
+    }
+  }
 }
 
 class ExerciseForm extends StatefulWidget {
@@ -815,46 +937,85 @@ class ExerciseForm extends StatefulWidget {
 }
 
 class _ExerciseFormState extends State<ExerciseForm> {
+  static const _parts = ['肩', '胸', '腹', '背', '臀', '腿', '手臂', '核心'];
+  static const _types = [
+    ('STRENGTH', '力量训练'),
+    ('ELLIPTICAL', '椭圆机'),
+    ('STEPPER', '爬楼机'),
+    ('TREADMILL', '跑步机'),
+  ];
+
+  String type = 'STRENGTH';
+  final Set<String> bodyParts = {};
   final action = TextEditingController();
   final weight = TextEditingController();
   final sets = TextEditingController();
-  final duration = TextEditingController();
+  String handleType = '固定把手';
+  final resistance = TextEditingController();
   final speed = TextEditingController();
   final incline = TextEditingController();
-  String part = '\u80a9';
-  String type = '\u529b\u91cf\u8bad\u7ec3';
+  final duration = TextEditingController();
+  DateTime exerciseDate = DateTime.now();
   bool loading = false;
+
   @override
   void dispose() {
     action.dispose();
     weight.dispose();
     sets.dispose();
-    duration.dispose();
+    resistance.dispose();
     speed.dispose();
     incline.dispose();
+    duration.dispose();
     super.dispose();
   }
 
+  String get _dateText =>
+      '${exerciseDate.year.toString().padLeft(4, '0')}-${exerciseDate.month.toString().padLeft(2, '0')}-${exerciseDate.day.toString().padLeft(2, '0')}';
+
+  Future<void> pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: exerciseDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
+    if (picked != null) setState(() => exerciseDate = picked);
+  }
+
   Future<void> save() async {
-    if (action.text.trim().isEmpty || int.tryParse(duration.text) == null) {
-      showToast(
-        context,
-        '\u8bf7\u5b8c\u6574\u586b\u5199\u8bad\u7ec3\u4fe1\u606f',
-      );
+    if (int.tryParse(duration.text) == null) {
+      showToast(context, '请填写运动时长（分钟）');
+      return;
+    }
+    if (type == 'STRENGTH' &&
+        (bodyParts.isEmpty || action.text.trim().isEmpty)) {
+      showToast(context, '力量训练需选择训练部位并填写动作名称');
       return;
     }
     setState(() => loading = true);
+    final body = <String, dynamic>{
+      'exerciseType': type,
+      'durationMinutes': int.parse(duration.text),
+      'exerciseDate': _dateText,
+    };
+    switch (type) {
+      case 'STRENGTH':
+        body['bodyParts'] = bodyParts.toList();
+        body['actionName'] = action.text.trim();
+        body['weight'] = double.tryParse(weight.text);
+        body['sets'] = int.tryParse(sets.text);
+      case 'ELLIPTICAL':
+        body['handleType'] = handleType;
+        body['resistance'] = int.tryParse(resistance.text);
+      case 'STEPPER':
+        body['speed'] = double.tryParse(speed.text);
+      case 'TREADMILL':
+        body['speed'] = double.tryParse(speed.text);
+        body['incline'] = double.tryParse(incline.text);
+    }
     try {
-      await Api.post('/api/exercise/${widget.session.username}', {
-        'bodyPart': part,
-        'exerciseType': type,
-        'actionName': action.text.trim(),
-        'weight': double.tryParse(weight.text) ?? 0,
-        'sets': int.tryParse(sets.text) ?? 0,
-        'durationMinutes': int.parse(duration.text),
-        'speed': double.tryParse(speed.text),
-        'incline': double.tryParse(incline.text),
-      });
+      await Api.post('/exercise/${widget.session.username}', body);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) showToast(context, '$e');
@@ -875,100 +1036,157 @@ class _ExerciseFormState extends State<ExerciseForm> {
       shrinkWrap: true,
       children: [
         const Text(
-          '\u6dfb\u52a0\u4eca\u65e5\u8bad\u7ec3',
+          '添加运动记录',
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 14),
-        DropdownButtonFormField<String>(
-          value: type,
-          decoration: const InputDecoration(
-            labelText: '\u8fd0\u52a8\u5668\u68b0',
-            border: OutlineInputBorder(),
-          ),
-          items: const [
-            '\u529b\u91cf\u8bad\u7ec3',
-            '\u8dd1\u6b65\u673a',
-            '\u722c\u697c\u673a',
-            '\u692d\u5706\u4eea',
-          ].map((x) => DropdownMenuItem(value: x, child: Text(x))).toList(),
-          onChanged: (x) => setState(() => type = x!),
-        ),
-        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
-          children: ['\u80a9', '\u80cc', '\u80f8', '\u81c0', '\u817f']
+          children: _types
               .map(
-                (x) => ChoiceChip(
-                  label: Text(x),
-                  selected: part == x,
-                  onSelected: (_) => setState(() => part = x),
+                (t) => ChoiceChip(
+                  label: Text(t.$2),
+                  selected: type == t.$1,
+                  onSelected: (_) => setState(() => type = t.$1),
                 ),
               )
               .toList(),
         ),
+        const SizedBox(height: 12),
+        ..._buildTypeFields(),
         const SizedBox(height: 14),
-        TextField(
-          controller: action,
-          decoration: const InputDecoration(
-            labelText: '\u8bad\u7ec3\u52a8\u4f5c',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        if (type == '\u8dd1\u6b65\u673a' || type == '\u692d\u5706\u4eea')
-          TextField(
-            controller: speed,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: '\u901f\u5ea6（km/h）',
-              border: OutlineInputBorder(),
-            ),
-          ),
-        if (type == '\u8dd1\u6b65\u673a')
-          TextField(
-            controller: incline,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: '\u5761\u5ea6（%）',
-              border: OutlineInputBorder(),
-            ),
-          ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: weight,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: '\u8bad\u7ec3\u91cd\u91cf\uff08\u5343\u514b\uff09',
-            border: OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: sets,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: '\u8bad\u7ec3\u7ec4\u6570',
-            border: OutlineInputBorder(),
-          ),
+        OutlinedButton.icon(
+          onPressed: pickDate,
+          icon: const Icon(Icons.calendar_today),
+          label: Text('运动日期：$_dateText'),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: duration,
           keyboardType: TextInputType.number,
           decoration: const InputDecoration(
-            labelText: '\u8bad\u7ec3\u65f6\u957f\uff08\u5206\u949f\uff09',
+            labelText: '运动时长（分钟，必填）',
             border: OutlineInputBorder(),
           ),
         ),
         const SizedBox(height: 20),
         FilledButton(
           onPressed: loading ? null : save,
-          child: Text(
-            loading ? '\u4fdd\u5b58\u4e2d...' : '\u4fdd\u5b58\u8bb0\u5f55',
-          ),
+          child: Text(loading ? '保存中...' : '保存记录'),
         ),
       ],
     ),
   );
+
+  List<Widget> _buildTypeFields() {
+    switch (type) {
+      case 'STRENGTH':
+        return [
+          const Text('训练部位（可多选）', style: TextStyle(color: Colors.black54)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _parts
+                .map(
+                  (p) => FilterChip(
+                    label: Text(p),
+                    selected: bodyParts.contains(p),
+                    onSelected: (v) => setState(
+                      () => v ? bodyParts.add(p) : bodyParts.remove(p),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: action,
+            decoration: const InputDecoration(
+              labelText: '动作名称（必填，如卧推）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: weight,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '重量（kg，选填）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: sets,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '组数（选填）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ];
+      case 'ELLIPTICAL':
+        return [
+          const Text('把手类型', style: TextStyle(color: Colors.black54)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            children: ['固定把手', '摇摆把手']
+                .map(
+                  (h) => ChoiceChip(
+                    label: Text(h),
+                    selected: handleType == h,
+                    onSelected: (_) => setState(() => handleType = h),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: resistance,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '阻力等级（选填）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ];
+      case 'STEPPER':
+        return [
+          TextField(
+            controller: speed,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '速度（步/分钟，选填）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ];
+      case 'TREADMILL':
+        return [
+          TextField(
+            controller: speed,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '速度（km/h，选填）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: incline,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: '坡度（%，选填）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ];
+      default:
+        return [];
+    }
+  }
 }
 
 class CardsPage extends StatelessWidget {
@@ -978,7 +1196,7 @@ class CardsPage extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('\u8d2d\u4e70\u4f1a\u5458\u5361')),
     body: FutureBuilder<List<dynamic>>(
-      future: getList('/api/cards'),
+      future: getList('/cards'),
       builder: (_, snapshot) {
         if (!snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
@@ -992,7 +1210,7 @@ class CardsPage extends StatelessWidget {
                 trailing: FilledButton(
                   onPressed: () async {
                     try {
-                      await Api.post('/api/cards/purchase', {
+                      await Api.post('/cards/purchase', {
                         'username': session.username,
                         'cardId': x['id'],
                       });
@@ -1019,49 +1237,102 @@ class CardsPage extends StatelessWidget {
 class CoursePage extends StatelessWidget {
   const CoursePage(this.session, {super.key});
   final Session session;
+
   @override
-  Widget build(BuildContext context) => FutureBuilder<List<dynamic>>(
-    future: getList('/api/courses'),
-    builder: (_, snapshot) {
-      if (!snapshot.hasData)
-        return const Center(child: CircularProgressIndicator());
-      return ListView(
-        children: [
-          const TitleBlock(
-            '\u8bfe\u7a0b\u9884\u7ea6',
-            '\u56e2\u8bfe / \u79c1\u6559',
-          ),
-          ...snapshot.data!.map(
-            (x) => Card(
-              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              child: ListTile(
-                title: Text('${x['title']}'),
-                subtitle: Text(
-                  '${x['type']}  ${x['coachName'] ?? ''}\n${x['startTime'] ?? ''}',
-                ),
-                isThreeLine: true,
-                trailing: FilledButton(
-                  onPressed: () async {
-                    try {
-                      await Api.post(
-                        '/api/courses/${x['id']}/book/${session.username}',
-                        {},
-                      );
-                      if (context.mounted)
-                        showToast(context, '\u9884\u7ea6\u6210\u529f');
-                    } catch (e) {
-                      if (context.mounted) showToast(context, '$e');
-                    }
-                  },
-                  child: const Text('\u9884\u7ea6'),
-                ),
+  Widget build(BuildContext context) {
+    print('CoursePage build called');
+
+    return FutureBuilder<List<dynamic>>(
+      future: getList('/courses'),
+      builder: (_, snapshot) {
+        print('ConnectionState: ${snapshot.connectionState}');
+        print('hasData: ${snapshot.hasData}');
+        print('hasError: ${snapshot.hasError}');
+
+        if (snapshot.hasError) {
+          // ⚠️ 去掉 const
+          return Scaffold(
+            appBar: AppBar(title: const Text('课程预约')),
+            body: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('加载失败：${snapshot.error}'),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('返回'),
+                  ),
+                ],
               ),
             ),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          // ⚠️ 去掉 const
+          return Scaffold(
+            appBar: AppBar(title: const Text('课程预约')),
+            body: const Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final data = snapshot.data!;
+        print('Data type: ${data.runtimeType}');
+        print('Data content: $data');
+
+        final List<dynamic> items = data is List ? data : [];
+
+        if (items.isEmpty) {
+          // ⚠️ 去掉 const
+          return Scaffold(
+            appBar: AppBar(title: const Text('课程预约')),
+            body: const Center(child: Text('暂无课程')),
+          );
+        }
+
+        // ⚠️ 去掉 const
+        return Scaffold(
+          appBar: AppBar(title: const Text('课程预约')),
+          body: ListView(
+            children: [
+              const TitleBlock('课程预约', '团课 / 私教'),
+              ...items.map((x) {
+                print('渲染课程: ${x['title']}');
+                return Card(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 6,
+                  ),
+                  child: ListTile(
+                    title: Text('${x['title']}'),
+                    subtitle: Text(
+                      '${x['type']}  ${x['coachName'] ?? ''}\n${x['startTime'] ?? ''}',
+                    ),
+                    isThreeLine: true,
+                    trailing: FilledButton(
+                      onPressed: () async {
+                        try {
+                          await Api.post(
+                            '/courses/${x['id']}/book/${session.username}',
+                            {},
+                          );
+                          if (context.mounted) showToast(context, '预约成功');
+                        } catch (e) {
+                          if (context.mounted) showToast(context, '$e');
+                        }
+                      },
+                      child: const Text('预约'),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ],
           ),
-        ],
-      );
-    },
-  );
+        );
+      },
+    );
+  }
 }
 
 class OrdersPage extends StatelessWidget {
@@ -1070,7 +1341,7 @@ class OrdersPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SimpleListPage(
     '\u6211\u7684\u8ba2\u5355',
-    '/api/orders/${session.username}',
+    '/orders/${session.username}',
     (x) => ListTile(
       title: Text('${x['title']}'),
       subtitle: Text('${x['createTime'] ?? ''}'.split('T').first),
@@ -1088,13 +1359,13 @@ class BookingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SimpleListPage(
     '\u5df2\u7ea6\u8bfe\u7a0b',
-    '/api/bookings/${session.username}',
+    '/bookings/${session.username}',
     (x) => ListTile(
       title: Text('${x['course']?['title'] ?? ''}'),
       subtitle: Text('${x['course']?['startTime'] ?? ''}'),
       trailing: TextButton(
         onPressed: () async {
-          await Api.put('/api/bookings/${x['bookingId']}/cancel');
+          await Api.put('/bookings/${x['bookingId']}/cancel');
           if (context.mounted)
             showToast(context, '\u5df2\u53d6\u6d88\u9884\u7ea6');
         },
@@ -1110,7 +1381,7 @@ class NoticePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => SimpleListPage(
     '\u901a\u77e5\u4e2d\u5fc3',
-    '/api/notifications/${session.role}?userId=${session.id}',
+    '/notifications/${session.role}?userId=${session.id}',
     (x) => ListTile(
       leading: const Icon(Icons.campaign_outlined, color: purple),
       title: Text('${x['title']}'),
@@ -1168,7 +1439,7 @@ class _RefundPageState extends State<RefundPage> {
   @override
   void initState() {
     super.initState();
-    cards = getList('/api/cards/owned/${widget.session.username}');
+    cards = getList('/cards/owned/${widget.session.username}');
   }
 
   @override
@@ -1187,7 +1458,7 @@ class _RefundPageState extends State<RefundPage> {
     }
     setState(() => loading = true);
     try {
-      await Api.post('/api/refunds', {
+      await Api.post('/refunds', {
         'username': widget.session.username,
         'orderId': selected['id'],
         'reason': reason,
@@ -1433,13 +1704,17 @@ class MembershipPage extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('\u4f1a\u5458\u6743\u76ca')),
     body: FutureBuilder<List<dynamic>>(
-      future: getList('/api/memberships/${session.username}'),
+      future: getList('/memberships/${session.username}'),
       builder: (_, snapshot) {
         if (snapshot.hasError) return Center(child: Text('${snapshot.error}'));
         if (!snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
         if (snapshot.data!.isEmpty)
-          return const Center(child: Text('\u6682\u65e0\u6709\u6548\u4f1a\u5458\u5361\uff0c\u8bf7\u5148\u8d2d\u4e70'));
+          return const Center(
+            child: Text(
+              '\u6682\u65e0\u6709\u6548\u4f1a\u5458\u5361\uff0c\u8bf7\u5148\u8d2d\u4e70',
+            ),
+          );
         return ListView.separated(
           padding: const EdgeInsets.all(20),
           itemCount: snapshot.data!.length,
@@ -1494,7 +1769,10 @@ class _PasswordPageState extends State<PasswordPage> {
 
   Future<void> save() async {
     if (oldPassword.text.isEmpty || newPassword.text.length < 6) {
-      showToast(context, '\u8bf7\u8f93\u5165\u65e7\u5bc6\u7801\uff0c\u4e14\u65b0\u5bc6\u7801\u81f3\u5c11 6 \u4f4d');
+      showToast(
+        context,
+        '\u8bf7\u8f93\u5165\u65e7\u5bc6\u7801\uff0c\u4e14\u65b0\u5bc6\u7801\u81f3\u5c11 6 \u4f4d',
+      );
       return;
     }
     setState(() => loading = true);
@@ -1544,7 +1822,9 @@ class _PasswordPageState extends State<PasswordPage> {
             height: 50,
             child: FilledButton(
               onPressed: loading ? null : save,
-              child: Text(loading ? '\u63d0\u4ea4\u4e2d...' : '\u786e\u8ba4\u4fee\u6539'),
+              child: Text(
+                loading ? '\u63d0\u4ea4\u4e2d...' : '\u786e\u8ba4\u4fee\u6539',
+              ),
             ),
           ),
         ],
